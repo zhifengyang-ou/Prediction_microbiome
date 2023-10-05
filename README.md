@@ -16,10 +16,10 @@ Activate environment
 conda activate myenv
 ```
 ## Usage
-In the conda environment, run
+In the conda environment, navigate to __src/__ folder and run
 ```
-## for windows system
-python src\main.py
+cd src
+python main.py
 ```
 The output is in the __output/__ folder in default. The data is inside the __data/__ folder.
 ### Change the setting of model and datasets
