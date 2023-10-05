@@ -22,10 +22,14 @@ cd src
 python main.py
 ```
 The output is in the __output/__ folder in default. The data is inside the __data/__ folder.
+
+The output file name, for example, Dataset.0.DNN.predictors.env.predicted.asv.csv.  Dataset.0(indicate the first dataset in __map.tsv__ file).DNN.(the model use DNN model)predictors.env(the predictor is environmental variables).predicted.asv.csv
+
+
 ### Change the setting of model and datasets
 You can change the __src/map.tsv__ and __src/config.ini__ file to change the path of datasets, model setting and output dirctory.
 
-The __src/map.tsv__ includes the paths of asv and env csv tables:
+The __src/map.tsv__ includes the paths of asv and env csv tables, you can add more rows of pairs of environmental and asv table files.
 ```
 ENV	ASV
 Air01A1.Env.fillna.csv	Air01A1.ASV.Top100.csv
