@@ -26,7 +26,7 @@ The output is in the __output/__ folder in default. The data is inside the __dat
 ## Meaning of output file name
 The output file name, for example, __Dataset.0.DNN.predictors.env.predicted.asv.csv__, indicates: __Dataset.0__(indicate the first dataset in __map.tsv__ file)__.DNN.__(the model use DNN model)__predictors.env__(the predictor is environmental variables).predicted.asv.csv
 
-### Change the setting of model and datasets
+## Change the setting of model and datasets
 You can change the __src/map.tsv__ and __src/config.ini__ file to change the path of datasets, model setting and output dirctory.
 
 The __src/map.tsv__ includes the paths of asv and env csv tables, you can add more rows of pairs of environmental and asv table files.
