@@ -22,8 +22,8 @@ cd src
 python main.py
 ```
 The output is in the __output/__ folder in default. The data is inside the __data/__ folder.
-
-The output file name, for example, Dataset.0.DNN.predictors.env.predicted.asv.csv.  Dataset.0(indicate the first dataset in __map.tsv__ file).DNN.(the model use DNN model)predictors.env(the predictor is environmental variables).predicted.asv.csv
+## Meaning of output file name
+The output file name, for example, __Dataset.0.DNN.predictors.env.predicted.asv.csv__, indicates: __Dataset.0__(indicate the first dataset in __map.tsv__ file)__.DNN.__(the model use DNN model)__predictors.env__(the predictor is environmental variables).predicted.asv.csv
 
 
 ### Change the setting of model and datasets
