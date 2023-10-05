@@ -1,4 +1,5 @@
 # Predict microbial composition of time-series
+Runing the __src/main.py__ can fit a few machine learning models for the asv abundance and environmental factors using training data, and predict the asv abundance using test data.
 
 ## Installation
 
