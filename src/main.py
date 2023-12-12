@@ -229,21 +229,21 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
     for_periods=int(config['for_periods'])  
     
     ## split data based on the selection of predictors
-    if predictor == "env":   ## use previous environmental variables to predict asv abundance
-        for env, asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(env_list,asv_list,train_start,train_end,test_start,test_end):
-            ## split asv abundance as X and Y
-            X_train, y_train , X_test, y_test=split_sample_ts(asv,train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods)
-            ## split environmental variables as X
-            X_train2,X_test2=split_sample_ts(env[:,:env_num],train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods)
-            ## For forcast, use last {time_steps} of avaiable data for X
-            X_last=env[-time_steps:,:env_num].reshape(1,-1)
+    # if predictor == "env":   ## use previous environmental variables to predict asv abundance
+    #     for env, asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(env_list,asv_list,train_start,train_end,test_start,test_end):
+    #         ## split asv abundance as X and Y
+    #         X_train, y_train , X_test, y_test=split_sample_ts(asv,train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods)
+    #         ## split environmental variables as X
+    #         X_train2,X_test2=split_sample_ts(env[:,:env_num],train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods)
+    #         ## For forcast, use last {time_steps} of avaiable data for X
+    #         X_last=env[-time_steps:,:env_num].reshape(1,-1)
             
-            X_train=X_train2
-            X_test=X_test2[0:1,:]
-            y_train=y_train
-            y_test=y_test
-            X=asv
-            data_list.append([X_train,X_test,y_train,y_test,X_last,X])
+    #         X_train=X_train2
+    #         X_test=X_test2[0:1,:]
+    #         y_train=y_train
+    #         y_test=y_test
+    #         X=asv
+    #         data_list.append([X_train,X_test,y_train,y_test,X_last,X])
     
     if predictor == "asv":  ## use previous asv abundance to predict asv abundance
         for asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(asv_list,train_start,train_end,test_start,test_end):
@@ -256,10 +256,15 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
     
     if predictor == "env+asv":  ## use previous asv abundance and previous environmental variables to predict asv abundance
         for env, asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(env_list,asv_list,train_start,train_end,test_start,test_end):
+            if env_num=="all":
+                env_num=env.shape[1]
+            elif env_num>env.shape[1]:
+                env_num=env.shape[1]  
+                print("The number of enviromental factors is larger than all the number, so use all the environmental factors as X")
             ## split asv abundance as X and Y
             X_train, y_train , X_test, y_test=split_sample_ts(np.concatenate((asv,env[:,:env_num]),axis=1),train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods)
             X_test=X_test[0:1,:]
-            X_last=asv[-time_steps:,:].reshape(1,-1)
+            X_last=np.concatenate((asv,env[:,:env_num]),axis=1)[-time_steps:,:].reshape(1,-1)
             X=asv
             data_list.append([X_train,X_test,y_train,y_test,X_last,X])
 
@@ -396,8 +401,8 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     X_test = np.concatenate((X_test[:,next_time:], next_prediction.reshape(1,-1)),axis=1)
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
-                
-                df = pd.DataFrame(y_pred, columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
+                y_pred=np.array(y_pred)
+                df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
                 
                 num_iterations = forecast_end_i-X.shape[0]
@@ -413,7 +418,7 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
                 
-                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
     
                 n+=1
@@ -436,8 +441,8 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
 
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
-                
-                df = pd.DataFrame(y_pred, columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
+                y_pred=np.array(y_pred)
+                df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
                 
                 num_iterations = forecast_end_i-X.shape[0]
@@ -452,7 +457,7 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
-                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
                 n+=1
         ## For other sklearn models
@@ -473,8 +478,8 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     X_test = np.concatenate((X_test[:,next_time:], next_prediction.reshape(1,-1)),axis=1)
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
-                    
-                df = pd.DataFrame(y_pred, columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
+                y_pred=np.array(y_pred)    
+                df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
                 
                 num_iterations = forecast_end_i-X.shape[0]
@@ -489,7 +494,7 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
-                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
                 n+=1 
 
