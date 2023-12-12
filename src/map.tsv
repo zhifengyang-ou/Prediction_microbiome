@@ -1,3 +1,3 @@
-ENV	ASV
-Air01A1.Env.fillna.csv	Air01A1.ASV.Top100.csv
-Air01A1.Env.fillna.csv	Air01A1.ASV.Top1000.csv
+ENV	ASV	train_start	train_end	test_start	test_end	forecast_start	forecast_end
+Air01A1.Env.fillna.csv	Air01A1.ASV.Top100.csv	1	30	31	40	50	70
+Air01A1.Env.fillna.csv	Air01A1.ASV.Top1000.csv	5	30	31	40	50	70
