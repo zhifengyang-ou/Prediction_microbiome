@@ -1,7 +1,7 @@
 # Predict microbial composition of time-series
 Runing the __src/main.py__ can fit a few machine learning models for the asv abundance and environmental factors using training data, and predict the asv abundance using test data.
 
-## Updata 12/11/23
+## Update 12/11/23
 Now the model only use previous asv or previous env or previous asv+ previous env as predictor to predict next 1 time point of asv abundance in model fitting.
 Now the training period, test period,and forcast period could be set for each data set in the map file.But be careful that the test_end is not larger than total data size and forecast_start is not smaller than total data size.
 ```
