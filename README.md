@@ -1,6 +1,9 @@
 # Predict microbial composition of time-series
 Runing the __src/main.py__ can fit a few machine learning models for the asv abundance and environmental factors using training data, and predict the asv abundance using test data.
 
+## Update 12/23/23
+Now, you can customize the settings of hyperparameters for different models by adjusting the configuration file. While not all model hyperparameters are configurable through this file, I have included some crucial ones based on my knowledge. To explore the range and data type of hyperparameters, please refer to the additional /src/config_illustration.ini file. I separated the illustration from the original .ini file to address certain encoding issues in the introduction. For a more comprehensive overview of model settings and a wider range of possible hyperparameters to tweak, please see the reference link provided in the /src/config_illustration.ini file.
+
 ## Update 12/11/23
 Now the model only use previous asv or previous asv+ previous env as predictor to predict next 1 time point of asv abundance in model fitting.
 Now the training period, test period,and forcast period could be set for each data set in the map file.But be careful that the test_end is not larger than total data size and forecast_start is not smaller than total data size.
