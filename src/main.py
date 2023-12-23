@@ -31,6 +31,7 @@ from sklearn.neural_network import MLPRegressor
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.wrappers.scikit_learn import KerasRegressor
+from keras.layers import Dropout
 
 ## reading config files
 
@@ -45,6 +46,8 @@ def read_config():
     
     models_str=config['model_setting']['models']
     models=[key.strip() for key in models_str.split(',')]
+    MLP_layer_str=config['MLP']['hidden_layer_sizes']
+    MLP_layer=[int(key.strip()) for key in MLP_layer_str.split(',')]
     return {
         'dir_env': config['Paths']['dir_env'],
         'dir_asv': config['Paths']['dir_asv'],
@@ -54,7 +57,25 @@ def read_config():
         'models':models,
         'env_num':config['model_setting']['env_num'],
         'time_steps':config['model_setting']['time_steps'],
-        'for_periods':config['model_setting']['for_periods']
+        'for_periods':config['model_setting']['for_periods'],
+        'Ridge':{'alpha':float(config['Ridge']['alpha'])},
+        'PLS':{'n_components':int(config['PLS']['n_components'])},
+        'PCR':{'n_components':'None' if config['PCR']['n_components']=="None" else int(config['PCR']['n_components'])},
+        'RandomForest':{'n_estimators':int(config['RandomForest']['n_estimators']),
+                        'max_features':float(config['RandomForest']['max_features'])},
+        'MLP':{'hidden_layer_sizes':MLP_layer,
+               'alpha':float(config['MLP']['alpha']),
+               'learning_rate_init':float(config['MLP']['learning_rate_init']),
+               'max_iter':int(config['MLP']['max_iter'])},
+        'DNN':{'n_layer':int(config['DNN']['n_layer']),
+               'n_unit':int(config['DNN']['n_unit']),
+               'dropout':float(config['DNN']['dropout'])},
+        'RNN':{'n_layer':int(config['RNN']['n_layer']),
+               'n_unit':int(config['RNN']['n_unit']),
+               'dropout':float(config['RNN']['dropout'])},
+        'LSTM':{'n_layer':int(config['LSTM']['n_layer']),
+               'n_unit':int(config['LSTM']['n_unit']),
+               'dropout':float(config['LSTM']['dropout'])}        
         }
     
 import csv
@@ -278,19 +299,19 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
         lr=make_pipeline(StandardScaler(),LinearRegression())
         data_model['LinearRegression']={'model':lr,'data':data_list}
     if 'Ridge' in model_names:
-        ridge=make_pipeline(StandardScaler(),Ridge())
+        ridge=make_pipeline(StandardScaler(),Ridge(alpha=config['Ridge']['alpha']))
         data_model['Ridge']={'model':ridge,'data':data_list}    
     if 'PLS' in model_names:
-        pls=make_pipeline(StandardScaler(),PLSRegression(5))
+        pls=make_pipeline(StandardScaler(),PLSRegression(config['PLS']['n_components']))
         data_model['PLS']={'model':pls,'data':data_list} 
     if 'PCR' in model_names:
-        pcr = make_pipeline(StandardScaler(), PCA(n_components=5),LinearRegression())
+        pcr = make_pipeline(StandardScaler(), PCA(n_components=config['PCR']['n_components']),LinearRegression())
         data_model['PCR']={'model':pcr,'data':data_list}
     if 'RandomForest' in model_names:
-        rf=make_pipeline(StandardScaler(),RandomForestRegressor(random_state=0))
+        rf=make_pipeline(StandardScaler(),RandomForestRegressor(random_state=0,n_estimators=config['RandomForest']['n_estimators'],max_features=config['RandomForest']['max_features']))
         data_model['RandomForest']={'model':rf,'data':data_list}
     if 'MLP' in model_names:
-        mlp=make_pipeline(StandardScaler(),MLPRegressor(random_state=1,  learning_rate_init=0.01, max_iter=10000))
+        mlp=make_pipeline(StandardScaler(),MLPRegressor(random_state=1,  learning_rate_init=config['MLP']['learning_rate_init'], max_iter=config['MLP']['max_iter'],alpha=config['MLP']['alpha'],hidden_layer_sizes=config['MLP']['hidden_layer_sizes']))
         data_model['MLP']={'model':mlp,'data':data_list}     
     ## For different datasets, we need build different keras models as the input dimension is dependent on the dimension of X
     if 'DNN' in model_names:
@@ -298,10 +319,13 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
         for data in data_model['DNN']['data']:
             input_dimension = data[0].shape[1] # Replace with the appropriate input dimension
             output_dimension=data[2].shape[1]
-            def create_dnn_regressor(input_dimension=input_dimension,output_dimension=output_dimension):
+            def create_dnn_regressor(input_dimension=input_dimension,output_dimension=output_dimension,n_layer=config['DNN']['n_layer'],n_unit=config['DNN']['n_unit'],dropout=config['DNN']['dropout']):
                 model = Sequential()
-                model.add(Dense(units=64, activation='relu', input_dim=input_dimension))
-                model.add(Dense(units=32, activation='relu'))  # Additional hidden layer
+                model.add(Dense(units=n_unit, activation='relu', input_dim=input_dimension))
+                model.add(Dropout(dropout))
+                for i in range(n_layer-1):
+                    model.add(Dense(units=n_unit, activation='relu'))
+                    model.add(Dropout(dropout))# Additional hidden layer
                 model.add(Dense(units=output_dimension, activation='linear'))  # Output layer for regression (linear activation)
                 model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mean_squared_error'])
                 return model
@@ -321,11 +345,14 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
             input_dimension = X_train.shape[2]# Replace with the appropriate input dimension
             sequence_length = X_train.shape[1]# Replace with the appropriate sequence length
             output_dimension=y_train.shape[1]
-            def create_rnn_regressor(input_dimension=input_dimension,sequence_length=sequence_length,output_dimension=output_dimension):
+            def create_rnn_regressor(input_dimension=input_dimension,sequence_length=sequence_length,output_dimension=output_dimension,n_layer=config['RNN']['n_layer'],n_unit=config['RNN']['n_unit'],dropout=config['RNN']['dropout']):
                 from keras.layers import SimpleRNN
                 model = Sequential()
-                model.add(SimpleRNN(units=64, activation='relu', input_shape=(sequence_length, input_dimension)))
-                model.add(Dense(units=32, activation='relu'))  # Additional hidden layer
+                model.add(SimpleRNN(units=n_unit, activation='relu', input_shape=(sequence_length, input_dimension)))
+                model.add(Dropout(dropout))
+                for i in range(n_layer-1):
+                    model.add(Dense(units=n_unit, activation='relu'))
+                    model.add(Dropout(dropout))# Additional hidden layer
                 model.add(Dense(units=output_dimension, activation='linear'))  # Output layer for regression (linear activation)
                 model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mean_squared_error'])
                 return model
@@ -349,11 +376,14 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
             output_dimension=y_train.shape[1]
             # Create a KerasRegressor instance using your RNN regressor model function
             def create_lstm_regressor(input_dimension=input_dimension,sequence_length=sequence_length,
-                                      output_dimension=output_dimension):
+                                      output_dimension=output_dimension,n_layer=config['LSTM']['n_layer'],n_unit=config['LSTM']['n_unit'],dropout=config['LSTM']['dropout']):
                 from keras.layers import LSTM
                 model = Sequential()
-                model.add(LSTM(units=64, activation='relu', input_shape=(sequence_length, input_dimension)))
-                model.add(Dense(units=32, activation='relu'))  # Additional hidden layer
+                model.add(LSTM(units=n_unit, activation='relu', input_shape=(sequence_length, input_dimension)))
+                model.add(Dropout(dropout))
+                for i in range(n_layer-1):
+                    model.add(Dense(units=n_unit, activation='relu'))
+                    model.add(Dropout(dropout))# Additional hidden layer
                 model.add(Dense(units=output_dimension, activation='linear'))  # Output layer for regression (linear activation)
                 model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mean_squared_error'])
                 return model
