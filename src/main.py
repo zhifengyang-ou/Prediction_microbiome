@@ -32,7 +32,7 @@ from keras.models import Sequential
 from keras.layers import Dense
 from keras.wrappers.scikit_learn import KerasRegressor
 from keras.layers import Dropout
-
+from sklearn.preprocessing import QuantileTransformer
 ## reading config files
 
 def read_config():
@@ -277,6 +277,7 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
     
     if predictor == "env+asv":  ## use previous asv abundance and previous environmental variables to predict asv abundance
         for env, asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(env_list,asv_list,train_start,train_end,test_start,test_end):
+            env_num=config['env_num']  
             if env_num=="all":
                 env_num=env.shape[1]
             elif env_num>env.shape[1]:
@@ -310,8 +311,8 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
     if 'RandomForest' in model_names:
         rf=make_pipeline(StandardScaler(),RandomForestRegressor(random_state=0,n_estimators=config['RandomForest']['n_estimators'],max_features=config['RandomForest']['max_features']))
         data_model['RandomForest']={'model':rf,'data':data_list}
-    if 'MLP' in model_names:
-        mlp=make_pipeline(StandardScaler(),MLPRegressor(random_state=1,  learning_rate_init=config['MLP']['learning_rate_init'], max_iter=config['MLP']['max_iter'],alpha=config['MLP']['alpha'],hidden_layer_sizes=config['MLP']['hidden_layer_sizes']))
+    if 'MLP' in model_names: ## It looks like standardscaler will produce some bugs for MLP
+        mlp=make_pipeline(QuantileTransformer(),MLPRegressor(random_state=1,activation="relu", learning_rate="adaptive", learning_rate_init=config['MLP']['learning_rate_init'], max_iter=config['MLP']['max_iter'],alpha=config['MLP']['alpha'],hidden_layer_sizes=config['MLP']['hidden_layer_sizes']))
         data_model['MLP']={'model':mlp,'data':data_list}     
     ## For different datasets, we need build different keras models as the input dimension is dependent on the dimension of X
     if 'DNN' in model_names:
@@ -425,6 +426,8 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                 y_pred=[]
                 for i in range(num_iterations):
                     # Predict the next time point
+                    print(i)
+                    print(X_test[:,1:10])
                     next_prediction = model.predict(X_test)
                     next_time=int(X_test.shape[1]/time_steps)
                     # Update feature matrix X by shifting down and adding the predicted value
@@ -501,6 +504,8 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
+                    print(i)
+                    print(X_test[:,1:10])
                     # Predict the next time point
                     next_prediction = model.predict(X_test)
                     next_time=int(X_test.shape[1]/time_steps)
