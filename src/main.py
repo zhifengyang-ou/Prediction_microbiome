@@ -426,7 +426,7 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                 y_pred=[]
                 for i in range(num_iterations):
                     # Predict the next time point
-                    print(i)
+                    print("X_test[:,1:10] for "+str(i)+"th iteration")
                     print(X_test[:,1:10])
                     next_prediction = model.predict(X_test)
                     next_time=int(X_test.shape[1]/time_steps)
@@ -466,6 +466,8 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
+                    print("X_test[:,:,0] for "+str(i)+"th iteration")
+                    print(X_test[:,:,0])
                     # Predict the next time point
                     next_prediction = model.predict(X_test)
                     next_time=int(X_test.shape[1]/time_steps)
@@ -504,7 +506,7 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
-                    print(i)
+                    print("X_test[:,1:10] for "+str(i)+"th iteration")
                     print(X_test[:,1:10])
                     # Predict the next time point
                     next_prediction = model.predict(X_test)
