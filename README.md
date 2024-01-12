@@ -1,6 +1,19 @@
 # Predict microbial composition of time-series
 Runing the __src/main.py__ can fit a few machine learning models for the asv abundance and environmental factors using training data, and predict the asv abundance using test data.
 
+## Update 1/12/24
+Issue:
+Encountered sensitivity of MLPRegressor to the scale of input features during iterative predictions. The problem manifested when predicted values became the next input for prediction, leading to errors, especially when the predicted values exceeded a certain threshold.
+Solution:
+    1.Scaling Strategy Change:
+        Initially used StandardScaler(), but it was sensitive to variations between training and new data.
+        Switched to QuantileTransformer() for scaling, ensuring transformation to a fixed range [0, 1].
+        QuantileTransformer handles outliers by assigning boundary values, preventing predicted values from becoming excessively large.
+
+    2. Correction for Multiple Datasets:
+        Addressed an issue where, when using multiple datasets in a map file, the environmental variable number for X was fixed to the first dataset's values.
+        Updated the implementation to allow each dataset to utilize its respective environmental variable numbers independently.
+
 ## Update 12/23/23
 Now, you can customize the settings of hyperparameters for different models by adjusting the configuration file. While not all model hyperparameters are configurable through this file, I have included some crucial ones based on my knowledge. To explore the range and data type of hyperparameters, please refer to the additional /src/config_illustration.ini file. I separated the illustration from the original .ini file to address certain encoding issues in the introduction. For a more comprehensive overview of model settings and a wider range of possible hyperparameters to tweak, please see the reference link provided in the /src/config_illustration.ini file.
 
