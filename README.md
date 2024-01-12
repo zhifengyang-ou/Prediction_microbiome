@@ -3,14 +3,16 @@ Runing the __src/main.py__ can fit a few machine learning models for the asv abu
 
 ## Update 1/12/24
 Issue:
+
 Encountered sensitivity of MLPRegressor to the scale of input features during iterative predictions. The problem manifested when predicted values became the next input for prediction, leading to errors, especially when the predicted values exceeded a certain threshold.
+
 Solution:
-    1.Scaling Strategy Change:
+
+1.Scaling Strategy Change:
         Initially used StandardScaler(), but it was sensitive to variations between training and new data.
         Switched to QuantileTransformer() for scaling, ensuring transformation to a fixed range [0, 1].
         QuantileTransformer handles outliers by assigning boundary values, preventing predicted values from becoming excessively large.
-
-    2. Correction for Multiple Datasets:
+2. Correction for Multiple Datasets:
         Addressed an issue where, when using multiple datasets in a map file, the environmental variable number for X was fixed to the first dataset's values.
         Updated the implementation to allow each dataset to utilize its respective environmental variable numbers independently.
 
