@@ -1,3 +1,3 @@
 ENV	ASV	train_start	train_end	test_start	test_end	forecast_start	forecast_end
-Air01A1.Env.fillna.csv	Air01A1.ASV.Top100.csv	1	30	31	40	50	70
+Air01A1.Env.fillna.csv	Air01A1.ASV.Top100.csv	1	30	31	40	31	40
 Wastewater01A2.Env.20240111154757.csv	Wastewater01A2.no.20240111154757.csv	1	44	12	44	45	52

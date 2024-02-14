@@ -222,7 +222,7 @@ def split_sample_ts(all_data,train_start,train_end,test_start,test_end,time_step
 ## build models and associated data
 ## now only include models and data, may include optimizer later--zhifeng
 
-def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_start,test_end,config):
+def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end,config):
     """
     usage:
         build models and split data into training and test dataset;
@@ -267,16 +267,20 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
     #         data_list.append([X_train,X_test,y_train,y_test,X_last,X])
     
     if predictor == "asv":  ## use previous asv abundance to predict asv abundance
-        for asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(asv_list,train_start,train_end,test_start,test_end):
+        for asv,train_start_i,train_end_i,test_start_i,test_end_i, forecast_start_i,forecast_end_i in zip(asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end):
             ## split asv abundance as X and Y
             X_train, y_train , X_test, y_test=split_sample_ts(asv,train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods)
             X_test=X_test[0:1,:]
-            X_last=asv[-time_steps:,:].reshape(1,-1)
+            if forecast_start_i>asv.shape[0]:
+                X_last=asv[-time_steps:,:].reshape(1,-1)
+            else:
+                X_last=asv[:(forecast_start_i-1),:]
+                X_last=X_last[-time_steps:,:].reshape(1,-1)
             X=asv
             data_list.append([X_train,X_test,y_train,y_test,X_last,X])
     
     if predictor == "env+asv":  ## use previous asv abundance and previous environmental variables to predict asv abundance
-        for env, asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(env_list,asv_list,train_start,train_end,test_start,test_end):
+        for env, asv,train_start_i,train_end_i,test_start_i,test_end_i, forecast_start_i,forecast_end_i in zip(env_list,asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end):
             env_num=config['env_num']  
             if env_num=="all":
                 env_num=env.shape[1]
@@ -286,7 +290,11 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
             ## split asv abundance as X and Y
             X_train, y_train , X_test, y_test=split_sample_ts(np.concatenate((asv,env[:,:env_num]),axis=1),train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods)
             X_test=X_test[0:1,:]
-            X_last=np.concatenate((asv,env[:,:env_num]),axis=1)[-time_steps:,:].reshape(1,-1)
+            if forecast_start_i>asv.shape[0]:
+                X_last=np.concatenate((asv,env[:,:env_num]),axis=1)[-time_steps:,:].reshape(1,-1)
+            else:
+                X_last=np.concatenate((asv,env[:,:env_num]),axis=1)[:(forecast_start_i-1),:]
+                X_last=X_last[-time_steps:,:].reshape(1,-1)                
             X=asv
             data_list.append([X_train,X_test,y_train,y_test,X_last,X])
 
@@ -336,10 +344,14 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
     ## For RNN and LSTM models, only previous time points of asv abundance can be used as predictor
     if 'RNN' in model_names:
         data_model['RNN']={'model':[],'data':[]} 
-        for asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(asv_list,train_start,train_end,test_start,test_end):
+        for asv,train_start_i,train_end_i,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end):
             X_train, y_train , X_test, y_test=split_sample_ts(asv,train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods,reshape=False)
             X_test=X_test[0:1,:]
-            X_last=asv[-time_steps:,:].reshape(1,time_steps,-1)
+            if forecast_start_i>asv.shape[0]:
+                X_last=asv[-time_steps:,:].reshape(1,time_steps,-1)
+            else:
+                X_last=asv[:(forecast_start_i-1),:]
+                X_last=X_last[-time_steps:,:].reshape(1,time_steps,-1)
             X=asv
             data_model['RNN']['data'].append([X_train,X_test,y_train,y_test,X_last,X])
             # Specify the input dimension (number of features) and sequence length
@@ -365,10 +377,14 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
             data_model['RNN']['model'].append(model)
     if 'LSTM' in model_names:
         data_model['LSTM']={'model':[],'data':[]} 
-        for asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(asv_list,train_start,train_end,test_start,test_end):
+        for asv,train_start_i,train_end_i,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end):
             X_train, y_train , X_test, y_test=split_sample_ts(asv,train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods,reshape=False)
             X_test=X_test[0:1,:]
-            X_last=asv[-time_steps:,:].reshape(1,time_steps,-1)
+            if forecast_start_i>asv.shape[0]:
+                X_last=asv[-time_steps:,:].reshape(1,time_steps,-1)
+            else:
+                X_last=asv[:(forecast_start_i-1),:]
+                X_last=X_last[-time_steps:,:].reshape(1,time_steps,-1)
             X=asv
             data_model['LSTM']['data'].append([X_train,X_test,y_train,y_test,X_last,X])
             # Specify the input dimension (number of features) and sequence length
@@ -438,7 +454,10 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                 df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
                 
-                num_iterations = forecast_end_i-X.shape[0]
+                if forecast_start_i>X.shape[0]:
+                    num_iterations = forecast_end_i-X.shape[0]
+                else:
+                    num_iterations=forecast_end_i-forecast_start_i+1
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
@@ -450,8 +469,11 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
-                
-                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                if forecast_start_i>X.shape[0]:
+                    df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                else:
+                    df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
     
                 n+=1
@@ -480,7 +502,10 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                 df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
                 
-                num_iterations = forecast_end_i-X.shape[0]
+                if forecast_start_i>X.shape[0]:
+                    num_iterations = forecast_end_i-X.shape[0]
+                else:
+                    num_iterations=forecast_end_i-forecast_start_i+1
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
@@ -492,7 +517,10 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
-                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                if forecast_start_i>X.shape[0]:
+                    df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                else:
+                    df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
                 n+=1
         ## For other sklearn models
@@ -519,7 +547,10 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                 df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
                 
-                num_iterations = forecast_end_i-X.shape[0]
+                if forecast_start_i>X.shape[0]:
+                    num_iterations = forecast_end_i-X.shape[0]
+                else:
+                    num_iterations=forecast_end_i-forecast_start_i+1
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
@@ -531,7 +562,11 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
-                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                if forecast_start_i>X.shape[0]:
+                    df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                else:
+                    df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
                 n+=1 
 
@@ -554,7 +589,7 @@ if __name__ == "__main__":
     print("reading data...")
     env_list, asv_list,asvid_list=read_data(env_files,asv_files,config)
     print("building models...")
-    data_model=build_models_and_split_data(env_list,asv_list,train_start,train_end,test_start,test_end,config)
+    data_model=build_models_and_split_data(env_list,asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end,config)
     print("model fitting and predicting...")
     models_fit_predict(data_model,asvid_list,test_start,test_end, forecast_start,forecast_end, config)
     
