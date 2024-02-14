@@ -2,7 +2,7 @@
 Runing the __src/main.py__ can fit a few machine learning models for the asv abundance and environmental factors using training data, and predict the asv abundance using test data.
 
 ## Update 2/13/2024
-Since requirement.yaml contains system-specific information, so I added an environment.yml without specific system requirement for installation.
+Since requirement.yaml contains system-specific information, so I added an requirement.yaml without specific system requirement for installation.
 
 ## Update 1/12/24
 Issue:
@@ -45,7 +45,7 @@ git clone https://github.com/zhifengyang-ou/Prediction_microbiome.git
 ```
 Open your command-line terminal and navigate to the directory where the __requirement.yaml__ file is located, creat a environment and install requirements
 ```
-conda env create -f environment.yml -n myenv
+conda env create -f requirement.yaml -n myenv
 ```
 Activate environment
 ```
