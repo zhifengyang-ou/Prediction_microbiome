@@ -17,6 +17,10 @@ import os
 import pandas as pd
 import numpy as np
 
+# Suppress TensorFlow logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+
 ## Sklearn Models 
 from sklearn.pipeline import make_pipeline
 from sklearn.linear_model import LinearRegression
@@ -30,9 +34,17 @@ from sklearn.neural_network import MLPRegressor
 ## keras models
 from keras.models import Sequential
 from keras.layers import Dense
-from keras.wrappers.scikit_learn import KerasRegressor
+from scikeras.wrappers import KerasRegressor
 from keras.layers import Dropout
 from sklearn.preprocessing import QuantileTransformer
+from keras.optimizers import Adam
+## pytorch models
+from torch.utils.data import DataLoader, TensorDataset
+import torch
+import pytorch_module
+## evaluation metrics
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+
 ## reading config files
 
 def read_config():
@@ -67,15 +79,42 @@ def read_config():
                'alpha':float(config['MLP']['alpha']),
                'learning_rate_init':float(config['MLP']['learning_rate_init']),
                'max_iter':int(config['MLP']['max_iter'])},
+               
         'DNN':{'n_layer':int(config['DNN']['n_layer']),
+               'epoch':int(config['DNN']['epoch']),
                'n_unit':int(config['DNN']['n_unit']),
-               'dropout':float(config['DNN']['dropout'])},
+               'dropout':float(config['DNN']['dropout']),
+               'learning_rate':float(config['pytorch_DNN']['learning_rate'])},
+               
         'RNN':{'n_layer':int(config['RNN']['n_layer']),
                'n_unit':int(config['RNN']['n_unit']),
-               'dropout':float(config['RNN']['dropout'])},
+               'epoch':int(config['RNN']['epoch']),
+               'dropout':float(config['RNN']['dropout']),
+               'learning_rate':float(config['pytorch_RNN']['learning_rate'])},
+               
         'LSTM':{'n_layer':int(config['LSTM']['n_layer']),
                'n_unit':int(config['LSTM']['n_unit']),
-               'dropout':float(config['LSTM']['dropout'])}        
+               'epoch':int(config['LSTM']['epoch']),
+               'dropout':float(config['LSTM']['dropout']),
+               'learning_rate':float(config['pytorch_LSTM']['learning_rate'])},
+               
+        'pytorch_DNN':{'n_layer':int(config['pytorch_DNN']['n_layer']),
+               'n_unit':int(config['pytorch_DNN']['n_unit']),
+               'dropout':float(config['pytorch_DNN']['dropout']),
+               'epoch':int(config['pytorch_DNN']['epoch']),
+               'learning_rate':float(config['pytorch_DNN']['learning_rate'])},
+               
+        'pytorch_RNN':{'n_layer':int(config['pytorch_RNN']['n_layer']),
+               'n_unit':int(config['pytorch_RNN']['n_unit']),
+               'dropout':float(config['pytorch_RNN']['dropout']),
+               'epoch':int(config['pytorch_RNN']['epoch']),
+               'learning_rate':float(config['pytorch_RNN']['learning_rate'])},
+               
+        'pytorch_LSTM':{'n_layer':int(config['pytorch_LSTM']['n_layer']),
+               'n_unit':int(config['pytorch_LSTM']['n_unit']),
+               'dropout':float(config['pytorch_LSTM']['dropout']),
+               'epoch':int(config['pytorch_LSTM']['epoch']),
+               'learning_rate':float(config['pytorch_LSTM']['learning_rate'])}                 
         }
     
 import csv
@@ -222,7 +261,7 @@ def split_sample_ts(all_data,train_start,train_end,test_start,test_end,time_step
 ## build models and associated data
 ## now only include models and data, may include optimizer later--zhifeng
 
-def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_start,test_end,config):
+def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end,config):
     """
     usage:
         build models and split data into training and test dataset;
@@ -267,16 +306,20 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
     #         data_list.append([X_train,X_test,y_train,y_test,X_last,X])
     
     if predictor == "asv":  ## use previous asv abundance to predict asv abundance
-        for asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(asv_list,train_start,train_end,test_start,test_end):
+        for asv,train_start_i,train_end_i,test_start_i,test_end_i, forecast_start_i,forecast_end_i in zip(asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end):
             ## split asv abundance as X and Y
             X_train, y_train , X_test, y_test=split_sample_ts(asv,train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods)
             X_test=X_test[0:1,:]
-            X_last=asv[-time_steps:,:].reshape(1,-1)
+            if forecast_start_i>asv.shape[0]:
+                X_last=asv[-time_steps:,:].reshape(1,-1)
+            else:
+                X_last=asv[:(forecast_start_i-1),:]
+                X_last=X_last[-time_steps:,:].reshape(1,-1)
             X=asv
             data_list.append([X_train,X_test,y_train,y_test,X_last,X])
     
     if predictor == "env+asv":  ## use previous asv abundance and previous environmental variables to predict asv abundance
-        for env, asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(env_list,asv_list,train_start,train_end,test_start,test_end):
+        for env, asv,train_start_i,train_end_i,test_start_i,test_end_i, forecast_start_i,forecast_end_i in zip(env_list,asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end):
             env_num=config['env_num']  
             if env_num=="all":
                 env_num=env.shape[1]
@@ -286,7 +329,11 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
             ## split asv abundance as X and Y
             X_train, y_train , X_test, y_test=split_sample_ts(np.concatenate((asv,env[:,:env_num]),axis=1),train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods)
             X_test=X_test[0:1,:]
-            X_last=np.concatenate((asv,env[:,:env_num]),axis=1)[-time_steps:,:].reshape(1,-1)
+            if forecast_start_i>asv.shape[0]:
+                X_last=np.concatenate((asv,env[:,:env_num]),axis=1)[-time_steps:,:].reshape(1,-1)
+            else:
+                X_last=np.concatenate((asv,env[:,:env_num]),axis=1)[:(forecast_start_i-1),:]
+                X_last=X_last[-time_steps:,:].reshape(1,-1)                
             X=asv
             data_list.append([X_train,X_test,y_train,y_test,X_last,X])
 
@@ -303,11 +350,20 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
         ridge=make_pipeline(StandardScaler(),Ridge(alpha=config['Ridge']['alpha']))
         data_model['Ridge']={'model':ridge,'data':data_list}    
     if 'PLS' in model_names:
-        pls=make_pipeline(StandardScaler(),PLSRegression(config['PLS']['n_components']))
-        data_model['PLS']={'model':pls,'data':data_list} 
+        
+        data_model['PLS']={'model':[],'data':data_list}
+        for data in data_model['PLS']['data']:
+            n_components=config['PLS']['n_components']
+            if config['PLS']['n_components']>data[1].shape[1]:
+                n_components=  data[1].shape[1]
+            pls=make_pipeline(StandardScaler(),PLSRegression(n_components))
+            data_model['PLS']['model'].append(pls)
     if 'PCR' in model_names:
-        pcr = make_pipeline(StandardScaler(), PCA(n_components=config['PCR']['n_components']),LinearRegression())
-        data_model['PCR']={'model':pcr,'data':data_list}
+        data_model['PCR']={'model':[],'data':data_list}
+        for data in data_model['PCR']['data']:
+            n_components=min(config['PCR']['n_components'],data[0].shape[0],data[0].shape[1])    
+            pcr = make_pipeline(StandardScaler(), PCA(n_components=n_components),LinearRegression())
+            data_model['PCR']['model'].append(pcr)
     if 'RandomForest' in model_names:
         rf=make_pipeline(StandardScaler(),RandomForestRegressor(random_state=0,n_estimators=config['RandomForest']['n_estimators'],max_features=config['RandomForest']['max_features']))
         data_model['RandomForest']={'model':rf,'data':data_list}
@@ -320,7 +376,7 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
         for data in data_model['DNN']['data']:
             input_dimension = data[0].shape[1] # Replace with the appropriate input dimension
             output_dimension=data[2].shape[1]
-            def create_dnn_regressor(input_dimension=input_dimension,output_dimension=output_dimension,n_layer=config['DNN']['n_layer'],n_unit=config['DNN']['n_unit'],dropout=config['DNN']['dropout']):
+            def create_dnn_regressor(input_dimension=input_dimension,output_dimension=output_dimension,n_layer=config['DNN']['n_layer'],n_unit=config['DNN']['n_unit'],dropout=config['DNN']['dropout'],learning_rate=config['DNN']['learning_rate']):
                 model = Sequential()
                 model.add(Dense(units=n_unit, activation='relu', input_dim=input_dimension))
                 model.add(Dropout(dropout))
@@ -328,25 +384,30 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
                     model.add(Dense(units=n_unit, activation='relu'))
                     model.add(Dropout(dropout))# Additional hidden layer
                 model.add(Dense(units=output_dimension, activation='linear'))  # Output layer for regression (linear activation)
-                model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mean_squared_error'])
+                optimizer = Adam(learning_rate=learning_rate)
+                model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mean_squared_error'])
                 return model
-            model = KerasRegressor(build_fn=create_dnn_regressor, epochs=500, batch_size=32, verbose=0)
+            model = KerasRegressor(model=create_dnn_regressor, epochs=config['DNN']['epoch'], batch_size=32, verbose=0)
             data_model['DNN']['model'].append(model)
      
     ## For RNN and LSTM models, only previous time points of asv abundance can be used as predictor
     if 'RNN' in model_names:
         data_model['RNN']={'model':[],'data':[]} 
-        for asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(asv_list,train_start,train_end,test_start,test_end):
+        for asv,train_start_i,train_end_i,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end):
             X_train, y_train , X_test, y_test=split_sample_ts(asv,train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods,reshape=False)
             X_test=X_test[0:1,:]
-            X_last=asv[-time_steps:,:].reshape(1,time_steps,-1)
+            if forecast_start_i>asv.shape[0]:
+                X_last=asv[-time_steps:,:].reshape(1,time_steps,-1)
+            else:
+                X_last=asv[:(forecast_start_i-1),:]
+                X_last=X_last[-time_steps:,:].reshape(1,time_steps,-1)
             X=asv
             data_model['RNN']['data'].append([X_train,X_test,y_train,y_test,X_last,X])
             # Specify the input dimension (number of features) and sequence length
             input_dimension = X_train.shape[2]# Replace with the appropriate input dimension
             sequence_length = X_train.shape[1]# Replace with the appropriate sequence length
             output_dimension=y_train.shape[1]
-            def create_rnn_regressor(input_dimension=input_dimension,sequence_length=sequence_length,output_dimension=output_dimension,n_layer=config['RNN']['n_layer'],n_unit=config['RNN']['n_unit'],dropout=config['RNN']['dropout']):
+            def create_rnn_regressor(input_dimension=input_dimension,sequence_length=sequence_length,output_dimension=output_dimension,n_layer=config['RNN']['n_layer'],n_unit=config['RNN']['n_unit'],dropout=config['RNN']['dropout'],learning_rate=config['RNN']['learning_rate']):
                 from keras.layers import SimpleRNN
                 model = Sequential()
                 model.add(SimpleRNN(units=n_unit, activation='relu', input_shape=(sequence_length, input_dimension)))
@@ -355,20 +416,25 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
                     model.add(Dense(units=n_unit, activation='relu'))
                     model.add(Dropout(dropout))# Additional hidden layer
                 model.add(Dense(units=output_dimension, activation='linear'))  # Output layer for regression (linear activation)
-                model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mean_squared_error'])
+                optimizer = Adam(learning_rate=learning_rate)
+                model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mean_squared_error'])
                 return model
 
 
             # Create a KerasRegressor instance using your RNN regressor model function
-            model = KerasRegressor(build_fn=create_rnn_regressor, 
-                                   epochs=200, batch_size=32,verbose=0)
+            model = KerasRegressor(model=create_rnn_regressor, 
+                                   epochs=config['RNN']['epoch'], batch_size=32,verbose=0)
             data_model['RNN']['model'].append(model)
     if 'LSTM' in model_names:
         data_model['LSTM']={'model':[],'data':[]} 
-        for asv,train_start_i,train_end_i,test_start_i,test_end_i in zip(asv_list,train_start,train_end,test_start,test_end):
+        for asv,train_start_i,train_end_i,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end):
             X_train, y_train , X_test, y_test=split_sample_ts(asv,train_start_i,train_end_i,test_start_i,test_end_i,time_steps,for_periods,reshape=False)
             X_test=X_test[0:1,:]
-            X_last=asv[-time_steps:,:].reshape(1,time_steps,-1)
+            if forecast_start_i>asv.shape[0]:
+                X_last=asv[-time_steps:,:].reshape(1,time_steps,-1)
+            else:
+                X_last=asv[:(forecast_start_i-1),:]
+                X_last=X_last[-time_steps:,:].reshape(1,time_steps,-1)
             X=asv
             data_model['LSTM']['data'].append([X_train,X_test,y_train,y_test,X_last,X])
             # Specify the input dimension (number of features) and sequence length
@@ -377,7 +443,7 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
             output_dimension=y_train.shape[1]
             # Create a KerasRegressor instance using your RNN regressor model function
             def create_lstm_regressor(input_dimension=input_dimension,sequence_length=sequence_length,
-                                      output_dimension=output_dimension,n_layer=config['LSTM']['n_layer'],n_unit=config['LSTM']['n_unit'],dropout=config['LSTM']['dropout']):
+                                      output_dimension=output_dimension,n_layer=config['LSTM']['n_layer'],n_unit=config['LSTM']['n_unit'],dropout=config['LSTM']['dropout'],learning_rate=config['LSTM']['learning_rate']):
                 from keras.layers import LSTM
                 model = Sequential()
                 model.add(LSTM(units=n_unit, activation='relu', input_shape=(sequence_length, input_dimension)))
@@ -386,11 +452,61 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
                     model.add(Dense(units=n_unit, activation='relu'))
                     model.add(Dropout(dropout))# Additional hidden layer
                 model.add(Dense(units=output_dimension, activation='linear'))  # Output layer for regression (linear activation)
-                model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mean_squared_error'])
+                optimizer = Adam(learning_rate=learning_rate)
+                model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mean_squared_error'])
                 return model
 
-            model = KerasRegressor(build_fn=create_lstm_regressor, epochs=200, batch_size=32,verbose=0)
+            model = KerasRegressor(model=create_lstm_regressor, epochs=config['LSTM']['epoch'], batch_size=32,verbose=0)
             data_model['LSTM']['model'].append(model)
+            
+    if 'pytorch_DNN' in model_names:
+
+        data_model = {'pytorch_DNN': {'model': [], 'data': data_list}}
+        for data in data_model['pytorch_DNN']['data']:
+            input_dimension = data[0].shape[1]  # Replace with the appropriate input dimension
+            output_dimension = data[2].shape[1]
+            n_layer = config['pytorch_DNN']['n_layer']
+            n_unit = config['pytorch_DNN']['n_unit']
+            dropout = config['pytorch_DNN']['dropout']
+    
+            model, optimizer, loss_fn = pytorch_module.create_dnn_regressor(input_dimension, output_dimension, n_layer=config['pytorch_DNN']['n_layer'],n_unit=config['pytorch_DNN']['n_unit'],dropout=config['pytorch_DNN']['dropout'],lr=config['pytorch_DNN']['learning_rate'])
+            data_model['pytorch_DNN']['model'].append((model, optimizer, loss_fn))
+    
+    if 'pytorch_RNN' in model_names:
+        data_model['pytorch_RNN'] = {'model': [], 'data': []}
+        for asv, train_start_i, train_end_i, test_start_i, test_end_i, forecast_start_i, forecast_end_i in zip(asv_list, train_start, train_end, test_start, test_end, forecast_start, forecast_end):
+            X_train, y_train, X_test, y_test = split_sample_ts(asv, train_start_i, train_end_i, test_start_i, test_end_i, time_steps, for_periods, reshape=False)
+            X_test = X_test[0:1, :]
+            if forecast_start_i > asv.shape[0]:
+                X_last = asv[-time_steps:, :].reshape(1, time_steps, -1)
+            else:
+                X_last = asv[:(forecast_start_i - 1), :]
+                X_last = X_last[-time_steps:, :].reshape(1, time_steps, -1)
+            X = asv
+            data_model['pytorch_RNN']['data'].append([X_train, X_test, y_train, y_test, X_last, X])
+            input_dimension = X_train.shape[2]
+            sequence_length = X_train.shape[1]
+            output_dimension = y_train.shape[1]
+            model, optimizer, loss_fn = pytorch_module.create_pytorch_rnn_regressor(input_dimension, sequence_length, output_dimension, config['pytorch_RNN']['n_layer'], config['pytorch_RNN']['n_unit'], config['pytorch_RNN']['dropout'], config['pytorch_RNN']['learning_rate'])
+            data_model['pytorch_RNN']['model'].append((model, optimizer, loss_fn))
+    
+    if 'pytorch_LSTM' in model_names:
+        data_model['pytorch_LSTM'] = {'model': [], 'data': []}
+        for asv, train_start_i, train_end_i, test_start_i, test_end_i, forecast_start_i, forecast_end_i in zip(asv_list, train_start, train_end, test_start, test_end, forecast_start, forecast_end):
+            X_train, y_train, X_test, y_test = split_sample_ts(asv, train_start_i, train_end_i, test_start_i, test_end_i, time_steps, for_periods, reshape=False)
+            X_test = X_test[0:1, :]
+            if forecast_start_i > asv.shape[0]:
+                X_last = asv[-time_steps:, :].reshape(1, time_steps, -1)
+            else:
+                X_last = asv[:(forecast_start_i - 1), :]
+                X_last = X_last[-time_steps:, :].reshape(1, time_steps, -1)
+            X = asv
+            data_model['pytorch_LSTM']['data'].append([X_train, X_test, y_train, y_test, X_last, X])
+            input_dimension = X_train.shape[2]
+            sequence_length = X_train.shape[1]
+            output_dimension = y_train.shape[1]
+            model, optimizer, loss_fn = pytorch_module.create_pytorch_lstm_regressor(input_dimension, sequence_length, output_dimension, config['pytorch_LSTM']['n_layer'], config['pytorch_LSTM']['n_unit'], config['pytorch_LSTM']['dropout'], config['pytorch_LSTM']['learning_rate'])
+            data_model['pytorch_LSTM']['model'].append((model, optimizer, loss_fn))
     return data_model
 
 
@@ -410,9 +526,11 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
     time_steps=int(config['time_steps'])
     
     os.chdir(dir_output)  # set dir location
+    training_errors = {}
+    test_errors={}
     for model_name, model_data in data_model.items():
-        
-        
+        training_errors[model_name] = []  
+        test_errors[model_name] = []
         ## For each model, each data, fit the model, make prediction for test data and make prediction for future data using the last {time_steps} of data as predictor
         ## The prediction is iterative.
         if model_name in ["DNN"]:
@@ -421,13 +539,21 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                                                                                           model_data['data'],test_start,test_end,forecast_start,forecast_end):         
                 X_train,X_test,y_train,y_test,X_last,X=data[0],data[1],data[2],data[3],data[4],data[5]
                 model.fit(X_train, y_train)
+                
+                ## model evaluation for training
+                y_train_pred = model.predict(X_train)
+                mse = mean_squared_error(y_train, y_train_pred)
+                mae = mean_absolute_error(y_train, y_train_pred)
+                rmse = np.sqrt(mse)
+                training_errors[model_name].append({'Dataset': n, 'MSE': mse, 'MAE': mae, 'RMSE': rmse})
+                
                 num_iterations = y_test.shape[0]
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
                     # Predict the next time point
-                    print("X_test[:,1:10] for "+str(i)+"th iteration")
-                    print(X_test[:,1:10])
+                    # print("X_test[:,1:10] for "+str(i)+"th iteration")
+                    # print(X_test[:,1:10])
                     next_prediction = model.predict(X_test)
                     next_time=int(X_test.shape[1]/time_steps)
                     # Update feature matrix X by shifting down and adding the predicted value
@@ -435,10 +561,20 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
+                
+                ## model evaluation for test
+                mse = mean_squared_error(y_test, y_pred)
+                mae = mean_absolute_error(y_test, y_pred)
+                rmse = np.sqrt(mse)
+                test_errors[model_name].append({'Dataset': n, 'MSE': mse, 'MAE': mae, 'RMSE': rmse})
+                
                 df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
                 
-                num_iterations = forecast_end_i-X.shape[0]
+                if forecast_start_i>X.shape[0]:
+                    num_iterations = forecast_end_i-X.shape[0]
+                else:
+                    num_iterations=forecast_end_i-forecast_start_i+1
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
@@ -450,8 +586,11 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
-                
-                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                if forecast_start_i>X.shape[0]:
+                    df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                else:
+                    df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
     
                 n+=1
@@ -461,13 +600,21 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
             for model,data,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['model'],
                                                                                           model_data['data'],test_start,test_end,forecast_start,forecast_end):         
                 X_train,X_test,y_train,y_test,X_last,X=data[0],data[1],data[2],data[3],data[4],data[5]
+
                 model.fit(X_train, y_train)
                 num_iterations = y_test.shape[0]
+                
+                ## model evaluation for training
+                y_train_pred = model.predict(X_train)
+                mse = mean_squared_error(y_train, y_train_pred)
+                mae = mean_absolute_error(y_train, y_train_pred)
+                rmse = np.sqrt(mse)
+                training_errors[model_name].append({'Dataset': n, 'MSE': mse, 'MAE': mae, 'RMSE': rmse})
+                
+                
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
-                    print("X_test[:,:,0] for "+str(i)+"th iteration")
-                    print(X_test[:,:,0])
                     # Predict the next time point
                     next_prediction = model.predict(X_test)
                     next_time=int(X_test.shape[1]/time_steps)
@@ -477,10 +624,20 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
+                                
+                ## model evaluation for test
+                mse = mean_squared_error(y_test, y_pred)
+                mae = mean_absolute_error(y_test, y_pred)
+                rmse = np.sqrt(mse)
+                test_errors[model_name].append({'Dataset': n, 'MSE': mse, 'MAE': mae, 'RMSE': rmse})
+                
                 df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
                 
-                num_iterations = forecast_end_i-X.shape[0]
+                if forecast_start_i>X.shape[0]:
+                    num_iterations = forecast_end_i-X.shape[0]
+                else:
+                    num_iterations=forecast_end_i-forecast_start_i+1
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
@@ -488,38 +645,139 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     next_prediction = model.predict(X_last)
                     next_time=int(X_last.shape[1]/time_steps)
                     # Update feature matrix X by shifting down and adding the predicted value
-                    X_last = np.concatenate((X_last[:,next_time:], next_prediction.reshape(1,1,-1)),axis=1)
+                    X_last = np.concatenate((X_last[:,next_time:,:], next_prediction.reshape(1,1,-1)),axis=1)
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
-                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                if forecast_start_i>X.shape[0]:
+                    df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                else:
+                    df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
                 n+=1
-        ## For other sklearn models
-        else:
+         
+        ## Pytorch DNN, RNN, LSTM model       
+        elif model_name in ["pytorch_DNN","pytorch_RNN","pytorch_LSTM"]:
             n=0
-            model=model_data['model']
-            for data,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['data'],test_start,test_end,forecast_start,forecast_end):         
+          # Assuming data[0] is the input tensor and data[2] is the target tensor
+            batch_size = 100
+            if model_name in ["pytorch_DNN"]:
+              epochs = config['pytorch_DNN']['epoch']
+            elif model_name in ["pytorch_RNN"]:
+              epochs = config['pytorch_RNN']['epoch']
+            elif model_name in ["pytorch_LSTM"]:
+              epochs = config['pytorch_LSTM']['epoch']
+                          
+            for model_set,data,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['model'],
+                                                                                          model_data['data'],test_start,test_end,forecast_start,forecast_end):
+                model, optimizer, loss_fn=model_set
+                X_train,X_test,y_train,y_test,X_last,X=data[0],data[1],data[2],data[3],data[4],data[5]
+                #scaler = StandardScaler()
+                #X_train = scaler.fit_transform(X_train)
+                #X_test = scaler.transform(X_test)
+                #X_last = scaler.transform(X_last)
+                dataset = TensorDataset(torch.tensor(X_train), torch.tensor(y_train))
+                dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+                
+                pytorch_module.train_pytorch_model(model, optimizer, loss_fn, dataloader, epochs)
+        
+                
+                # Switch to evaluation mode for prediction
+                model.eval()
+                
+                ## evaluation of traininig
+                y_train_pred = model(torch.tensor(X_train, dtype=torch.float32)).detach().numpy()
+                mse = mean_squared_error(y_train, y_train_pred)
+                mae = mean_absolute_error(y_train, y_train_pred)
+                rmse = np.sqrt(mse)
+                training_errors[model_name].append({'Dataset': n, 'MSE': mse, 'MAE': mae, 'RMSE': rmse})
+                
+                
+                # Iterative predictions for test set
+                y_pred =  pytorch_module.evaluate_pytorch_model(model,model_name, X_test, y_test, time_steps)
+                                
+                ## model evaluation for test
+                mse = mean_squared_error(y_test, y_pred)
+                mae = mean_absolute_error(y_test, y_pred)
+                rmse = np.sqrt(mse)
+                test_errors[model_name].append({'Dataset': n, 'MSE': mse, 'MAE': mae, 'RMSE': rmse})
+                
+                df = pd.DataFrame(y_pred[:, :X.shape[1]], columns=asvid_list, index=range(test_start_i, test_end_i + 1))
+                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
+                
+                # Iterative predictions for forecast set
+                X_last_tensor = torch.tensor(X_last, dtype=torch.float32)
+                y_pred = []
+                
+                if forecast_start_i > X.shape[0]:
+                    num_iterations = forecast_end_i - X.shape[0]
+                else:
+                    num_iterations = forecast_end_i - forecast_start_i + 1
+                
+                with torch.no_grad():
+                    for i in range(num_iterations):
+                        X_last_tensor = torch.tensor(X_last, dtype=torch.float32)
+                        next_prediction = model(X_last_tensor).numpy()
+                        next_time = int(X_last_tensor.shape[1] / time_steps)
+                        if model_name in ['pytorch_DNN']:
+                          X_last = np.concatenate((X_last[:,next_time:], next_prediction.reshape(1,-1)),axis=1)
+                        elif model_name in ['pytorch_RNN','pytorch_LSTM']:
+                          X_last = np.concatenate((X_last[:,next_time:,:], next_prediction.reshape(1,1,-1)),axis=1)
+                        y_pred.append(next_prediction.reshape(-1))
+                
+                y_pred = np.array(y_pred)
+                if forecast_start_i > X.shape[0]:
+                    df = pd.DataFrame(y_pred[(forecast_start_i - X.shape[0] - 1):(forecast_end_i - X.shape[0]), :X.shape[1]], columns=asvid_list, index=range(forecast_start_i, forecast_end_i + 1))
+                else:
+                    df = pd.DataFrame(y_pred[:, :X.shape[1]], columns=asvid_list, index=range(forecast_start_i, forecast_end_i + 1))
+                
+                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')
+                n+=1 
+        ## For PCR and PLS model
+        elif model_name in ["PCR","PLS"]:
+            n=0
+            for model,data,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['model'],model_data['data'],test_start,test_end,forecast_start,forecast_end):         
                 X_train,X_test,y_train,y_test,X_last,X=data[0],data[1],data[2],data[3],data[4],data[5]
                 model.fit(X_train, y_train)
+                
+                ## Model evaluation of training processes
+                y_train_pred = model.predict(X_train)
+                mse = mean_squared_error(y_train, y_train_pred)
+                mae = mean_absolute_error(y_train, y_train_pred)
+                rmse = np.sqrt(mse)
+                training_errors[model_name].append({'Dataset': n, 'MSE': mse, 'MAE': mae, 'RMSE': rmse})
+                
+                
                 num_iterations = y_test.shape[0]
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
-                    print("X_test[:,1:10] for "+str(i)+"th iteration")
-                    print(X_test[:,1:10])
+                    #print("X_test[:,-10:] for "+str(i)+"th iteration")
+                    #print(X_test[:,-10:])
                     # Predict the next time point
                     next_prediction = model.predict(X_test)
+                    # print(next_prediction)
                     next_time=int(X_test.shape[1]/time_steps)
                     # Update feature matrix X by shifting down and adding the predicted value
                     X_test = np.concatenate((X_test[:,next_time:], next_prediction.reshape(1,-1)),axis=1)
+                    # print(X_test)
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
-                y_pred=np.array(y_pred)    
+                y_pred=np.array(y_pred)
+                                
+                ## model evaluation for test
+                mse = mean_squared_error(y_test, y_pred)
+                mae = mean_absolute_error(y_test, y_pred)
+                rmse = np.sqrt(mse)
+                test_errors[model_name].append({'Dataset': n, 'MSE': mse, 'MAE': mae, 'RMSE': rmse})
+                    
                 df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
                 
-                num_iterations = forecast_end_i-X.shape[0]
+                if forecast_start_i>X.shape[0]:
+                    num_iterations = forecast_end_i-X.shape[0]
+                else:
+                    num_iterations=forecast_end_i-forecast_start_i+1
                 # Make iterative predictions
                 y_pred=[]
                 for i in range(num_iterations):
@@ -531,10 +789,83 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
                 y_pred=np.array(y_pred)
-                df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
-                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
-                n+=1 
+                if forecast_start_i>X.shape[0]:
+                    df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                else:
+                    df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
 
+                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
+                n+=1
+                training_errors_df = pd.DataFrame(training_errors)        
+        ## For other sklearn models
+        else:
+            n=0
+            model=model_data['model']
+            for data,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['data'],test_start,test_end,forecast_start,forecast_end):         
+                X_train,X_test,y_train,y_test,X_last,X=data[0],data[1],data[2],data[3],data[4],data[5]
+                model.fit(X_train, y_train)
+                
+                ## Model evaluation of training processes
+                y_train_pred = model.predict(X_train)
+                mse = mean_squared_error(y_train, y_train_pred)
+                mae = mean_absolute_error(y_train, y_train_pred)
+                rmse = np.sqrt(mse)
+                training_errors[model_name].append({'Dataset': n, 'MSE': mse, 'MAE': mae, 'RMSE': rmse})
+                
+                
+                num_iterations = y_test.shape[0]
+                # Make iterative predictions
+                y_pred=[]
+                for i in range(num_iterations):
+                    #print("X_test[:,-10:] for "+str(i)+"th iteration")
+                    #print(X_test[:,-10:])
+                    # Predict the next time point
+                    next_prediction = model.predict(X_test)
+                    # print(next_prediction)
+                    next_time=int(X_test.shape[1]/time_steps)
+                    # Update feature matrix X by shifting down and adding the predicted value
+                    X_test = np.concatenate((X_test[:,next_time:], next_prediction.reshape(1,-1)),axis=1)
+                    # print(X_test)
+                    # Update target array y by shifting down
+                    y_pred.append(next_prediction.reshape(-1))
+                y_pred=np.array(y_pred)
+                                
+                ## model evaluation for test
+                mse = mean_squared_error(y_test, y_pred)
+                mae = mean_absolute_error(y_test, y_pred)
+                rmse = np.sqrt(mse)
+                test_errors[model_name].append({'Dataset': n, 'MSE': mse, 'MAE': mae, 'RMSE': rmse})
+                    
+                df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(test_start_i,test_end_i+1))
+                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.predicted.asv.csv')
+                
+                if forecast_start_i>X.shape[0]:
+                    num_iterations = forecast_end_i-X.shape[0]
+                else:
+                    num_iterations=forecast_end_i-forecast_start_i+1
+                # Make iterative predictions
+                y_pred=[]
+                for i in range(num_iterations):
+                    # Predict the next time point
+                    next_prediction = model.predict(X_last)
+                    next_time=int(X_last.shape[1]/time_steps)
+                    # Update feature matrix X by shifting down and adding the predicted value
+                    X_last = np.concatenate((X_last[:,next_time:], next_prediction.reshape(1,-1)),axis=1)
+                    # Update target array y by shifting down
+                    y_pred.append(next_prediction.reshape(-1))
+                y_pred=np.array(y_pred)
+                if forecast_start_i>X.shape[0]:
+                    df = pd.DataFrame(y_pred[(forecast_start_i-X.shape[0]-1):(forecast_end_i-X.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                else:
+                    df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+
+                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
+                n+=1
+                training_errors_df = pd.DataFrame(training_errors)
+    training_errors_df = pd.DataFrame(training_errors)
+    training_errors_df.to_csv('training_errors.csv', index=False) 
+    test_errors_df = pd.DataFrame(test_errors)
+    test_errors_df.to_csv('test_errors.csv', index=False) 
 
 
 
@@ -554,7 +885,7 @@ if __name__ == "__main__":
     print("reading data...")
     env_list, asv_list,asvid_list=read_data(env_files,asv_files,config)
     print("building models...")
-    data_model=build_models_and_split_data(env_list,asv_list,train_start,train_end,test_start,test_end,config)
+    data_model=build_models_and_split_data(env_list,asv_list,train_start,train_end,test_start,test_end,forecast_start,forecast_end,config)
     print("model fitting and predicting...")
     models_fit_predict(data_model,asvid_list,test_start,test_end, forecast_start,forecast_end, config)
     
