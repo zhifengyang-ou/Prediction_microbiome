@@ -1,6 +1,29 @@
 # Predict microbial composition of time-series
 Runing the __src/main.py__ can fit a few machine learning models for the asv abundance and environmental factors using training data, and predict the asv abundance using test data.
 
+## Update 7/12/2024
+For more models implemented:
+I added DNN, RNN and LSTM model using Pytorch, although the structure is nearly identical with previous model using keras. But I am not sure whether the result is different.
+
+For more settings:
+Now in config file, we can set epochs for training of DNN, RNN and LSTM.
+
+For PLS and PCR:
+Now the model will automatically use the maximum dimensions if the dimensions are higher than feature number (For PCR and PLS) or sample size (For PCR).
+
+Output:
+Now the model output will contain training and test error (training_errors.csv and test_error.csv) for model and dataset. However, because test prediction is iterative, so it is not very comparable for training and test error, but it is still informative for overfitting and underfitting when comparing model performance.
+
+For Linux environment, I have tested:
+```
+conda env create -f environment_linux.yaml -n myenv
+```
+For other environment, not tested but try:
+```
+conda env create -f environment_no_system.yaml -n myenv
+```
+
+
 ## Update 2/13/2024
 Since requirement.yaml contains system-specific information, so I added an requirement.yaml without specific system requirement for installation.
 
