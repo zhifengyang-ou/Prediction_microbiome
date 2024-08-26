@@ -1,6 +1,20 @@
 # Predict microbial composition of time-series
 Runing the __src/main.py__ can fit a few machine learning models for the asv abundance and environmental factors using training data, and predict the asv abundance using test data.
 
+
+## Update 8/26
+Now the output include predicted asv for training set. Be careful, it is not itereative prediction like test set and forcast. 
+The pytorch model is not usable now.
+
+For Winodws environment, I have tested:
+```
+conda env create -f environment_windows.yml -n myenv
+```
+For Linux environment, I have tested:
+```
+conda env create -f environment_windows.yml -n myenv
+```
+
 ## Update 7/12/2024
 For more models implemented:
 I added DNN, RNN and LSTM model using Pytorch, although the structure is nearly identical with previous model using keras. But I am not sure whether the result is different.
