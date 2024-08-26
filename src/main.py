@@ -39,9 +39,9 @@ from keras.layers import Dropout
 from sklearn.preprocessing import QuantileTransformer
 from keras.optimizers import Adam
 ## pytorch models
-from torch.utils.data import DataLoader, TensorDataset
-import torch
-import pytorch_module
+#from torch.utils.data import DataLoader, TensorDataset
+#import torch
+#import pytorch_module
 ## evaluation metrics
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
@@ -535,11 +535,14 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
         ## The prediction is iterative.
         if model_name in ["DNN"]:
             n=0
-            for model,data,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['model'],
-                                                                                          model_data['data'],test_start,test_end,forecast_start,forecast_end):         
+            for model,data,train_start_i,train_end_i,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['model'],
+                                                                                          model_data['data'],train_start,train_end,test_start,test_end,forecast_start,forecast_end):         
                 X_train,X_test,y_train,y_test,X_last,X=data[0],data[1],data[2],data[3],data[4],data[5]
                 model.fit(X_train, y_train)
-                
+                #write training predicted
+                y_train_pred=model.predict(X_train)
+                df = pd.DataFrame(y_train_pred[:,:X.shape[1]], columns = asvid_list[n],index=range(train_start_i+time_steps,train_end_i+1))
+                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.train_predicted.asv.csv') 
                 ## model evaluation for training
                 y_train_pred = model.predict(X_train)
                 mse = mean_squared_error(y_train, y_train_pred)
@@ -560,8 +563,8 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     X_test = np.concatenate((X_test[:,next_time:], next_prediction.reshape(1,-1)),axis=1)
                     # Update target array y by shifting down
                     y_pred.append(next_prediction.reshape(-1))
-                y_pred=np.array(y_pred)
-                
+                y_pred=np.array(y_pred)               
+
                 ## model evaluation for test
                 mse = mean_squared_error(y_test, y_pred)
                 mae = mean_absolute_error(y_test, y_pred)
@@ -597,11 +600,16 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                 
         elif model_name in ["RNN","LSTM"]:
             n=0
-            for model,data,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['model'],
-                                                                                          model_data['data'],test_start,test_end,forecast_start,forecast_end):         
+            for model,data,train_start_i,train_end_i,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['model'],
+                                                                                          model_data['data'],train_start,train_end,test_start,test_end,forecast_start,forecast_end):         
                 X_train,X_test,y_train,y_test,X_last,X=data[0],data[1],data[2],data[3],data[4],data[5]
 
                 model.fit(X_train, y_train)
+                #write training predicted
+                y_train_pred=model.predict(X_train)
+                df = pd.DataFrame(y_train_pred[:,:X.shape[1]], columns = asvid_list[n],index=range(train_start_i+time_steps,train_end_i+1))
+                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.train_predicted.asv.csv') 
+
                 num_iterations = y_test.shape[0]
                 
                 ## model evaluation for training
@@ -736,10 +744,14 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
         ## For PCR and PLS model
         elif model_name in ["PCR","PLS"]:
             n=0
-            for model,data,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['model'],model_data['data'],test_start,test_end,forecast_start,forecast_end):         
+            for model,data,train_start_i,train_end_i,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['model'],model_data['data'],train_start,train_end,test_start,test_end,forecast_start,forecast_end):         
                 X_train,X_test,y_train,y_test,X_last,X=data[0],data[1],data[2],data[3],data[4],data[5]
                 model.fit(X_train, y_train)
-                
+                #write training predicted
+                y_train_pred=model.predict(X_train)
+                df = pd.DataFrame(y_train_pred[:,:X.shape[1]], columns = asvid_list[n],index=range(train_start_i+time_steps,train_end_i+1))
+                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.train_predicted.asv.csv') 
+
                 ## Model evaluation of training processes
                 y_train_pred = model.predict(X_train)
                 mse = mean_squared_error(y_train, y_train_pred)
@@ -801,10 +813,14 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
         else:
             n=0
             model=model_data['model']
-            for data,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['data'],test_start,test_end,forecast_start,forecast_end):         
+            for data,train_start_i,train_end_i,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['data'],train_start,train_end,test_start,test_end,forecast_start,forecast_end):         
                 X_train,X_test,y_train,y_test,X_last,X=data[0],data[1],data[2],data[3],data[4],data[5]
                 model.fit(X_train, y_train)
-                
+                #write training predicted
+                y_train_pred=model.predict(X_train)
+                df = pd.DataFrame(y_train_pred[:,:X.shape[1]], columns = asvid_list[n],index=range(train_start_i+time_steps,train_end_i+1))
+                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.train_predicted.asv.csv') 
+
                 ## Model evaluation of training processes
                 y_train_pred = model.predict(X_train)
                 mse = mean_squared_error(y_train, y_train_pred)
@@ -862,12 +878,43 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
 
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
                 n+=1
-                training_errors_df = pd.DataFrame(training_errors)
-    training_errors_df = pd.DataFrame(training_errors)
-    training_errors_df.to_csv('training_errors.csv', index=False) 
-    test_errors_df = pd.DataFrame(test_errors)
-    test_errors_df.to_csv('test_errors.csv', index=False) 
+                
+    train_error = []
 
+    # Loop through the dictionary and append model names and metrics to the list
+    for model_name, metrics_list in training_errors.items():
+        for metrics in metrics_list:
+            # Create a copy of the dictionary to avoid modifying the original
+            entry = metrics.copy()
+            # Add the model name to the entry
+            entry['Model'] = model_name
+            # Append the entry to the data list
+            train_error.append(entry)
+
+    # Convert the list of dictionaries to a DataFrame
+    df = pd.DataFrame(train_error)
+
+    # Save the DataFrame to a CSV file
+    df.to_csv('training_errors.csv', index=False)
+
+    test_error = []
+
+    # Loop through the dictionary and append model names and metrics to the list
+    for model_name, metrics_list in test_errors.items():
+        for metrics in metrics_list:
+            # Create a copy of the dictionary to avoid modifying the original
+            entry = metrics.copy()
+            # Add the model name to the entry
+            entry['Model'] = model_name
+            # Append the entry to the data list
+            test_error.append(entry)
+
+    # Convert the list of dictionaries to a DataFrame
+    df = pd.DataFrame(test_error)
+
+    # Save the DataFrame to a CSV file
+    df.to_csv('test_errors.csv', index=False)
+    print("training errors and test errors saved into output")
 
 
 if __name__ == "__main__":
