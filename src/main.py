@@ -31,6 +31,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.neural_network import MLPRegressor
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.svm import SVR
+from sklearn.multioutput import MultiOutputRegressor
 ## keras models
 from keras.models import Sequential
 from keras.layers import Dense
@@ -79,7 +82,17 @@ def read_config():
                'alpha':float(config['MLP']['alpha']),
                'learning_rate_init':float(config['MLP']['learning_rate_init']),
                'max_iter':int(config['MLP']['max_iter'])},
-               
+        'GradientBoostingRegressor': {
+            'n_estimators': int(config['GradientBoostingRegressor']['n_estimators']),
+            'learning_rate': float(config['GradientBoostingRegressor']['learning_rate']),
+            'max_depth': int(config['GradientBoostingRegressor']['max_depth']),
+            'subsample': float(config['GradientBoostingRegressor']['subsample'])
+        },
+        'SVR': {
+            'C': float(config['SVR']['C']),
+            'epsilon': float(config['SVR']['epsilon']),
+            'kernel': config['SVR']['kernel']
+        },       
         'DNN':{'n_layer':int(config['DNN']['n_layer']),
                'epoch':int(config['DNN']['epoch']),
                'n_unit':int(config['DNN']['n_unit']),
@@ -369,7 +382,19 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
         data_model['RandomForest']={'model':rf,'data':data_list}
     if 'MLP' in model_names: ## It looks like standardscaler will produce some bugs for MLP
         mlp=make_pipeline(QuantileTransformer(),MLPRegressor(random_state=1,activation="relu", learning_rate="adaptive", learning_rate_init=config['MLP']['learning_rate_init'], max_iter=config['MLP']['max_iter'],alpha=config['MLP']['alpha'],hidden_layer_sizes=config['MLP']['hidden_layer_sizes']))
-        data_model['MLP']={'model':mlp,'data':data_list}     
+        data_model['MLP']={'model':mlp,'data':data_list}    
+    if 'GradientBoostingRegressor' in model_names:
+        gtb = make_pipeline(StandardScaler(),MultiOutputRegressor(GradientBoostingRegressor(random_state=0,n_estimators=config['GradientBoostingRegressor']['n_estimators'],   # More boosting stages
+            learning_rate=config['GradientBoostingRegressor']['learning_rate'], 
+            max_depth=config['GradientBoostingRegressor']['max_depth'],        
+            subsample=config['GradientBoostingRegressor']['subsample'])))   
+        data_model['GradientBoostingRegressor'] = {'model': gtb, 'data': data_list}
+
+    if 'SVR' in model_names:
+        svr = make_pipeline(StandardScaler(), MultiOutputRegressor(SVR(C=config['SVR']['C'],
+            epsilon=config['SVR']['epsilon'],
+            kernel=config['SVR']['kernel'])))
+        data_model['SVR'] = {'model': svr, 'data': data_list}
     ## For different datasets, we need build different keras models as the input dimension is dependent on the dimension of X
     if 'DNN' in model_names:
         data_model['DNN']={'model':[],'data':data_list} 

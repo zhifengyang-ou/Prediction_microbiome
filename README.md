@@ -1,6 +1,9 @@
 # Predict microbial composition of time-series
 Runing the __src/main.py__ can fit a few machine learning models for the asv abundance and environmental factors using training data, and predict the asv abundance using test data.
 
+## Update 9/10
+Add two model from sklearn: Gradient Boosting for regression [https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.GradientBoostingRegressor.html#gradientboostingregressor] and Epsilon-Support Vector Regression [https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVR.html].
+And also new parameter setting for each model in config file.
 
 ## Update 8/26
 Now the output include predicted asv for training set. Be careful, it is not itereative prediction like test set and forcast. 
