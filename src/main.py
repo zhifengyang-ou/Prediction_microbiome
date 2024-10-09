@@ -41,6 +41,12 @@ from scikeras.wrappers import KerasRegressor
 from keras.layers import Dropout
 from sklearn.preprocessing import QuantileTransformer
 from keras.optimizers import Adam
+
+## ARIMA model
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.api import VAR
+
+
 ## pytorch models
 #from torch.utils.data import DataLoader, TensorDataset
 #import torch
@@ -127,7 +133,10 @@ def read_config():
                'n_unit':int(config['pytorch_LSTM']['n_unit']),
                'dropout':float(config['pytorch_LSTM']['dropout']),
                'epoch':int(config['pytorch_LSTM']['epoch']),
-               'learning_rate':float(config['pytorch_LSTM']['learning_rate'])}                 
+               'learning_rate':float(config['pytorch_LSTM']['learning_rate'])},
+        'ARIMA':{'p':int(config['model_setting']['time_steps']),
+               'd':int(config['ARIMA']['d']),
+               'q':float(config['ARIMA']['q'])}               
         }
     
 import csv
@@ -483,6 +492,39 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
 
             model = KerasRegressor(model=create_lstm_regressor, epochs=config['LSTM']['epoch'], batch_size=32,verbose=0)
             data_model['LSTM']['model'].append(model)
+    if 'ARIMA' in model_names:
+        data_model['ARIMA'] = {'model': [], 'data': []}
+        for asv, train_start_i, train_end_i, test_start_i, test_end_i, forecast_start_i, forecast_end_i in zip(asv_list, train_start, train_end, test_start, test_end, forecast_start, forecast_end):
+            X_train, y_train, X_test, y_test=asv[train_start_i-1:train_end_i,:],asv[train_start_i-1:train_end_i,:],asv[test_start_i-1:test_end_i,:],asv[test_start_i-1:test_end_i,:]
+            # Since ARIMA takes a 1D series as input, we fit the model for each ASV time series separately
+            arima_models = []
+            for i in range(X_train.shape[1]):  # Iterate over ASV abundance columns
+                arima_model = ARIMA(X_train[:, i], order=(config['ARIMA']['p'], config['ARIMA']['d'], config['ARIMA']['q']))  # Example ARIMA order (p, d, q)
+                arima_fitted = arima_model.fit()
+                arima_models.append(arima_fitted)
+            
+            data_model['ARIMA']['model'].append(arima_models)
+            X=asv
+            data_model['ARIMA']['data'].append([X_train, X_test, y_train, y_test,X])
+    if 'VAR' in model_names:
+        data_model['VAR'] = {'model': [], 'data': []}
+        for env,asv, train_start_i, train_end_i, test_start_i, test_end_i in zip(env_list,asv_list, train_start, train_end, test_start, test_end):
+            if predictor == "asv":
+                X = asv
+            else:
+                X=np.concatenate((asv,env[:,:env_num]),axis=1)
+            # Create training and test datasets by stacking all time series (ASV abundance)
+            X_train = X[train_start_i - 1:train_end_i, :]
+            X_test = X[test_start_i - 1:test_end_i, :]
+            
+                    
+            # Fit the VAR model using all ASV time series as endogenous variables
+            var_model = VAR(X_train)
+            var_fitted = var_model.fit(maxlags=time_steps)  # Use lags parameter from config
+
+            data_model['VAR']['model'].append(var_fitted)
+            data_model['VAR']['data'].append([X_train, X_test,asv])
+
             
     if 'pytorch_DNN' in model_names:
 
@@ -688,7 +730,112 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
                     df = pd.DataFrame(y_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
                 df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')                
                 n+=1
-         
+        elif model_name == "ARIMA":
+            n = 0
+            for arima_models, data, train_start_i, train_end_i, test_start_i, test_end_i, forecast_start_i, forecast_end_i in zip(
+                    model_data['model'], model_data['data'], train_start, train_end, test_start, test_end, forecast_start, forecast_end):
+                X_train, X_test, y_train, y_test,X = data[0], data[1], data[2], data[3],data[4]
+                y_train_pred = []
+                y_test_pred = []
+
+                # Predict training data
+                for i, arima_model in enumerate(arima_models):
+                    train_pred = arima_model.predict(start=0, end=len(X_train) - 1)
+                    y_train_pred.append(train_pred)
+                
+                # Predict test data
+                for i, arima_model in enumerate(arima_models):
+                    test_pred = arima_model.predict(start=len(X_train), end=len(X_train) + len(X_test) - 1)
+                    y_test_pred.append(test_pred)
+                
+                y_train_pred = np.array(y_train_pred).T
+                y_test_pred = np.array(y_test_pred).T
+               
+                # Save training predictions
+                df_train = pd.DataFrame(y_train_pred[time_steps:,:X.shape[1]], columns=asvid_list[n], index=range(train_start_i + time_steps, train_end_i + 1))
+                df_train.to_csv(f'Dataset.{n}.ARIMA.predictors.{predictor}.train_predicted.asv.csv')
+
+                # Save test predictions
+                df_test = pd.DataFrame(y_test_pred[:,:X.shape[1]], columns=asvid_list[n], index=range(test_start_i, test_end_i + 1))
+                df_test.to_csv(f'Dataset.{n}.ARIMA.predictors.{predictor}.test_predicted.asv.csv')
+
+                # Training error calculation
+                mse_train = mean_squared_error(y_train, y_train_pred)
+                mae_train = mean_absolute_error(y_train, y_train_pred)
+                rmse_train = np.sqrt(mse_train)
+                training_errors[model_name].append({'Dataset': n, 'MSE': mse_train, 'MAE': mae_train, 'RMSE': rmse_train})
+
+                # Test error calculation
+                mse_test = mean_squared_error(y_test, y_test_pred)
+                mae_test = mean_absolute_error(y_test, y_test_pred)
+                rmse_test = np.sqrt(mse_test)
+                test_errors[model_name].append({'Dataset': n, 'MSE': mse_test, 'MAE': mae_test, 'RMSE': rmse_test})
+
+                # Forecasting
+                y_forecast_pred = []
+                for i, arima_model in enumerate(arima_models):
+                    forecast = arima_model.predict(start=forecast_start_i-1, end=forecast_end_i-1)
+                    y_forecast_pred.append(forecast)
+
+                y_forecast_pred = np.array(y_forecast_pred).T
+
+                # Save forecasted predictions
+                df_forecast = pd.DataFrame(y_forecast_pred[:, :X.shape[1]],
+                                               columns=asvid_list[n], index=range(forecast_start_i, forecast_end_i + 1))
+
+                df_forecast.to_csv(f'Dataset.{n}.ARIMA.predictors.{predictor}.forecasted.asv.csv')
+
+                n += 1
+
+        elif model_name == "VAR":
+            n = 0
+            for var_fitted, data, train_start_i, train_end_i, test_start_i, test_end_i,forecast_start_i, forecast_end_i in zip(
+                    model_data['model'], model_data['data'], train_start, train_end, test_start, test_end,forecast_start, forecast_end):
+                X_train, X_test, X = data[0], data[1],data[2]
+
+                # Predict the training set using the model
+                y_train_pred = var_fitted.fittedvalues
+                
+                # Predict the test set by forecasting
+                y_test_pred = var_fitted.forecast(X_train, steps=len(X_test))
+
+                # Save training predictions
+                df_train = pd.DataFrame(y_train_pred[:,:X.shape[1]], columns=asvid_list[n], index=range(train_start_i + time_steps, train_end_i + 1))
+                df_train.to_csv(f'Dataset.{n}.VAR.predictors.{predictor}.train_predicted.asv.csv')
+
+                # Save test predictions
+                df_test = pd.DataFrame(y_test_pred[:,:X.shape[1]], columns=asvid_list[n], index=range(test_start_i, test_end_i + 1))
+                df_test.to_csv(f'Dataset.{n}.VAR.predictors.{predictor}.test_predicted.asv.csv')
+
+                # Training error calculation
+                mse_train = mean_squared_error(X_train[time_steps:,:X.shape[1]], y_train_pred[:,:X.shape[1]])
+                mae_train = mean_absolute_error(X_train[time_steps:,:X.shape[1]], y_train_pred[:,:X.shape[1]])
+                rmse_train = np.sqrt(mse_train)
+                training_errors[model_name].append({'Dataset': n, 'MSE': mse_train, 'MAE': mae_train, 'RMSE': rmse_train})
+
+                # Test error calculation
+                mse_test = mean_squared_error(X_test[:,:X.shape[1]], y_test_pred[:,:X.shape[1]])
+                mae_test = mean_absolute_error(X_test[:,:X.shape[1]], y_test_pred[:,:X.shape[1]])
+                rmse_test = np.sqrt(mse_test)
+                test_errors[model_name].append({'Dataset': n, 'MSE': mse_test, 'MAE': mae_test, 'RMSE': rmse_test})
+
+                # Forecasting
+                if forecast_start_i > X_train.shape[0]:
+                    num_iterations = forecast_end_i - X_train.shape[0]
+                    y_forecast_pred = var_fitted.forecast(X_train,steps=num_iterations)
+                else:
+                    num_iterations = forecast_end_i - forecast_start_i + 1
+                    y_forecast_pred = var_fitted.forecast(X_train[:forecast_start_i,:],steps=num_iterations)
+
+               
+                # Save forecasted predictions
+                if forecast_start_i>X_train.shape[0]:
+                    df = pd.DataFrame(y_forecast_pred[(forecast_start_i-X_train.shape[0]-1):(forecast_end_i-X_train.shape[0]),:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                else:
+                    df = pd.DataFrame(y_forecast_pred[:,:X.shape[1]], columns = asvid_list[n], index=range(forecast_start_i,forecast_end_i+1))
+                df.to_csv('Dataset.'+str(n)+'.'+model_name+'.predictors.'+str(predictor)+'.forecasted.asv.csv')    
+                n += 1
+
         ## Pytorch DNN, RNN, LSTM model       
         elif model_name in ["pytorch_DNN","pytorch_RNN","pytorch_LSTM"]:
             n=0

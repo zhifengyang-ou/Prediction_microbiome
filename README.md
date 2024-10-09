@@ -1,6 +1,12 @@
 # Predict microbial composition of time-series
 Runing the __src/main.py__ can fit a few machine learning models for the asv abundance and environmental factors using training data, and predict the asv abundance using test data.
 
+## Update 10/9
+Add two time-series model, named autoregressive integrated moving average (ARIMA) (can only using asv abundance) and Vector autoregression (VAR, can using environmental vairiables well),which is a statistical model used to capture the relationship between multiple quantities as they change over time.  
+ARIMA has two parameters (d and q) while VAR model has no parameter.
+It is noted that VAR assumes the data is stationary, if not, need difference the variables.
+These models need to install another package 'statsmodels'.
+
 ## Update 9/10
 Add two model from sklearn: Gradient Boosting for regression [https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.GradientBoostingRegressor.html#gradientboostingregressor] and Epsilon-Support Vector Regression [https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVR.html].
 And also new parameter setting for each model in config file.
