@@ -1,6 +1,9 @@
 # Predict microbial composition of time-series
 Runing the __src/main.py__ can fit a few machine learning models for the asv abundance and environmental factors using training data, and predict the asv abundance using test data.
 
+## Update 11/18
+Add to LSTM-like model, one is Transformer, another is GRU.
+
 ## Update 10/9
 Add two time-series model, named autoregressive integrated moving average (ARIMA) (can only using asv abundance) and Vector autoregression (VAR, can using environmental vairiables well),which is a statistical model used to capture the relationship between multiple quantities as they change over time.  
 ARIMA has two parameters (d and q) while VAR model has no parameter.
