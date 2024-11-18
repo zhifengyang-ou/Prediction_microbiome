@@ -116,6 +116,19 @@ def read_config():
                'epoch':int(config['LSTM']['epoch']),
                'dropout':float(config['LSTM']['dropout']),
                'learning_rate':float(config['pytorch_LSTM']['learning_rate'])},
+        'GRU':{'n_layer' : int(config['GRU']['n_layer']),
+                'n_unit' : int(config['GRU']['n_unit']),
+               'dropout' : float(config['GRU']['dropout']),
+                'learning_rate' : float(config['GRU']['learning_rate']),
+                'epoch' : int(config['GRU']['epoch'])
+               },
+        'Transformer':{'n_heads' : int(config['Transformer']['n_heads']),
+                        'n_units' : int(config['Transformer']['n_units']),
+                        'n_layers' : int(config['Transformer']['n_layers']),
+                        'dropout' : float(config['Transformer']['dropout']),
+                        'learning_rate' : float(config['Transformer']['learning_rate']),
+                        'epoch': int(config['Transformer']['epoch'])
+               },
                
         'pytorch_DNN':{'n_layer':int(config['pytorch_DNN']['n_layer']),
                'n_unit':int(config['pytorch_DNN']['n_unit']),
@@ -492,6 +505,80 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
 
             model = KerasRegressor(model=create_lstm_regressor, epochs=config['LSTM']['epoch'], batch_size=32,verbose=0)
             data_model['LSTM']['model'].append(model)
+    if 'GRU' in model_names:
+        from keras.layers import Dense, Dropout, GRU, Input
+        def create_gru_regressor(input_dimension, sequence_length, output_dimension, n_layer, n_unit, dropout, learning_rate):
+            """ Create GRU model """
+            model = Sequential()
+            model.add(GRU(units=n_unit, activation='relu', input_shape=(sequence_length, input_dimension)))
+            model.add(Dropout(dropout))
+            for _ in range(n_layer - 1):
+                model.add(Dense(units=n_unit, activation='relu'))
+                model.add(Dropout(dropout))
+            model.add(Dense(units=output_dimension, activation='linear'))
+            optimizer = Adam(learning_rate=learning_rate)
+            model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mean_squared_error'])
+            return model
+        data_model['GRU'] = {'model': [], 'data': []}
+        for asv, train_start_i, train_end_i, test_start_i, test_end_i, forecast_start_i, forecast_end_i in zip(
+                asv_list, train_start, train_end, test_start, test_end, forecast_start, forecast_end):
+            X_train, y_train, X_test, y_test = split_sample_ts(asv, train_start_i, train_end_i, test_start_i, test_end_i, time_steps, for_periods, reshape=False)
+            X_test=X_test[0:1,:]
+            if forecast_start_i>asv.shape[0]:
+                X_last=asv[-time_steps:,:].reshape(1,time_steps,-1)
+            else:
+                X_last=asv[:(forecast_start_i-1),:]
+                X_last=X_last[-time_steps:,:].reshape(1,time_steps,-1)
+            X=asv
+            data_model['GRU']['data'].append([X_train,X_test,y_train,y_test,X_last,X])
+            model = KerasRegressor(
+                model=create_gru_regressor(input_dimension=X_train.shape[2], sequence_length=X_train.shape[1], output_dimension=y_train.shape[1],
+                                           n_layer=config['GRU']['n_layer'], n_unit=config['GRU']['n_unit'], dropout=config['GRU']['dropout'], learning_rate=config['GRU']['learning_rate']),
+                epochs=config['GRU']['epoch'], batch_size=32, verbose=0
+            )
+            data_model['GRU']['model'].append(model)
+    if 'Transformer' in model_names:
+        from keras.layers import Dense, Dropout, MultiHeadAttention, LayerNormalization, Input
+        from keras.models import Model
+        data_model['Transformer'] = {'model': [], 'data': []}
+        def create_transformer_regressor(input_dimension, sequence_length, output_dimension, n_heads, n_units, n_layers, dropout, learning_rate):
+            """ Create Transformer model """
+            from keras.layers import GlobalAveragePooling1D,GlobalMaxPooling1D
+            inputs = Input(shape=(sequence_length, input_dimension))
+            x = inputs
+            x=Dense(n_units, activation='linear')(x)
+            for _ in range(n_layers):
+                attn_output = MultiHeadAttention(num_heads=n_heads, key_dim=n_units)(x, x)
+                x = LayerNormalization()(x + attn_output)
+                ffn_output = Dense(n_units, activation='relu')(x)
+                x = LayerNormalization()(x + ffn_output)
+
+            outputs = Dense(output_dimension, activation='linear')(x)
+            outputs = GlobalAveragePooling1D()(outputs)
+            model = Model(inputs=inputs, outputs=outputs)
+            model.compile(optimizer=Adam(learning_rate=learning_rate), loss='mean_squared_error', metrics=['mean_squared_error'])
+            return model
+        for asv, train_start_i, train_end_i, test_start_i, test_end_i, forecast_start_i, forecast_end_i in zip(
+                asv_list, train_start, train_end, test_start, test_end, forecast_start, forecast_end):
+            X_train, y_train, X_test, y_test = split_sample_ts(asv, train_start_i, train_end_i, test_start_i, test_end_i, time_steps, for_periods, reshape=False)
+            X_test=X_test[0:1,:]
+            if forecast_start_i>asv.shape[0]:
+                X_last=asv[-time_steps:,:].reshape(1,time_steps,-1)
+            else:
+                X_last=asv[:(forecast_start_i-1),:]
+                X_last=X_last[-time_steps:,:].reshape(1,time_steps,-1)
+            X=asv
+            data_model['Transformer']['data'].append([X_train,X_test,y_train,y_test,X_last,X])
+            
+            
+            model = KerasRegressor(
+                model=create_transformer_regressor(input_dimension=X_train.shape[2], sequence_length=X_train.shape[1], output_dimension=y_train.shape[1],
+                                                   n_heads=config['Transformer']['n_heads'], n_units=config['Transformer']['n_units'],
+                                                   n_layers=config['Transformer']['n_layers'], dropout=config['Transformer']['dropout'], learning_rate=config['Transformer']['learning_rate']),
+                epochs=config['Transformer']['epoch'], batch_size=32, verbose=0
+            )
+            data_model['Transformer']['model'].append(model)
+            data_model['Transformer']['data'].append([X_train, X_test, y_train, y_test,asv])
     if 'ARIMA' in model_names:
         data_model['ARIMA'] = {'model': [], 'data': []}
         for asv, train_start_i, train_end_i, test_start_i, test_end_i, forecast_start_i, forecast_end_i in zip(asv_list, train_start, train_end, test_start, test_end, forecast_start, forecast_end):
@@ -665,7 +752,7 @@ def models_fit_predict(data_model,asvid_list,test_start,test_end,forecast_start,
     
                 n+=1
                 
-        elif model_name in ["RNN","LSTM"]:
+        elif model_name in ["RNN","LSTM",'GRU','Transformer']:
             n=0
             for model,data,train_start_i,train_end_i,test_start_i,test_end_i,forecast_start_i,forecast_end_i in zip(model_data['model'],
                                                                                           model_data['data'],train_start,train_end,test_start,test_end,forecast_start,forecast_end):         
