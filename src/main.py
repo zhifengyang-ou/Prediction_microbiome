@@ -36,11 +36,11 @@ from sklearn.svm import SVR
 from sklearn.multioutput import MultiOutputRegressor
 ## keras models
 from keras.models import Sequential
-from keras.layers import Dense
 from scikeras.wrappers import KerasRegressor
-from keras.layers import Dropout
 from sklearn.preprocessing import QuantileTransformer
 from keras.optimizers import Adam
+from keras.layers import Dense, Dropout, GRU, Input,MultiHeadAttention, LayerNormalization
+from keras.models import Model
 
 ## ARIMA model
 from statsmodels.tsa.arima.model import ARIMA
@@ -506,7 +506,6 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
             model = KerasRegressor(model=create_lstm_regressor, epochs=config['LSTM']['epoch'], batch_size=32,verbose=0)
             data_model['LSTM']['model'].append(model)
     if 'GRU' in model_names:
-        from keras.layers import Dense, Dropout, GRU, Input
         def create_gru_regressor(input_dimension, sequence_length, output_dimension, n_layer, n_unit, dropout, learning_rate):
             """ Create GRU model """
             model = Sequential()
@@ -538,8 +537,6 @@ def build_models_and_split_data(env_list,asv_list,train_start,train_end,test_sta
             )
             data_model['GRU']['model'].append(model)
     if 'Transformer' in model_names:
-        from keras.layers import Dense, Dropout, MultiHeadAttention, LayerNormalization, Input
-        from keras.models import Model
         data_model['Transformer'] = {'model': [], 'data': []}
         def create_transformer_regressor(input_dimension, sequence_length, output_dimension, n_heads, n_units, n_layers, dropout, learning_rate):
             """ Create Transformer model """
